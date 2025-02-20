@@ -4,11 +4,12 @@ import os
 import re
 import subprocess
 import mysql.connector
-import pdfplumber
 from dotenv import load_dotenv
 from datetime import datetime
 
-
+import pdfplumber
+import pytesseract
+from pdf2image import convert_from_path
 
 # Load environment variables from .env file
 load_dotenv()
@@ -62,7 +63,6 @@ def create_db_and_tables():
     );
     """
 
-
     cursor.execute(create_well_info_table)
 
     create_stimulation_table = """
@@ -85,9 +85,7 @@ def create_db_and_tables():
     )
     """
 
-
     cursor.execute(create_stimulation_table)
-
     conn.commit()
     cursor.close()
     conn.close()
@@ -99,147 +97,60 @@ def create_db_and_tables():
 def ocr_pdf_to_text(pdf_path, temp_ocr_pdf_path="temp_ocr_output.pdf"):
     """
     Use ocrmypdf to create a text-searchable PDF from a scanned PDF,
-    then return extracted text via pdfplumber or PyPDF2.
+    then return extracted text via pdfplumber.
     """
-    # 1) Use ocrmypdf to produce an OCR'd PDF
+    # Run ocrmypdf to produce an OCR'd PDF
     subprocess.run(["ocrmypdf", "--force-ocr", pdf_path, temp_ocr_pdf_path], check=True)
 
-    # 2) Extract text from the newly created PDF
+    # Extract text from the newly created PDF
     text_content = ""
     with pdfplumber.open(temp_ocr_pdf_path) as pdf:
         for page in pdf.pages:
-            text_content += page.extract_text() + "\n"
+            text_content += (page.extract_text() or "") + "\n"
 
-    # Remove the temporary OCR PDF if desired
+    # Remove temporary OCR PDF
     os.remove(temp_ocr_pdf_path)
-
     return text_content
 
-
-def extract_text_from_pdf(pdf_path):
+def extract_text_from_pdf(pdf_path, min_chars_per_page=30, dpi=300):
     """
-    Attempt direct extraction with pdfplumber. If that fails or yields no text,
-    fallback to OCR with ocrmypdf.
+    Extract text from a PDF by first using pdfplumber, and if a page has 
+    insufficient text, run OCR on that page using pytesseract.
     """
-    text_content = ""
-
-    # Try pdfplumber on original PDF
+    full_text = ""
     try:
         with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text_content += extracted + "\n"
+            total_pages = len(pdf.pages)
+            for page_number, page in enumerate(pdf.pages, start=1):
+                extracted_text = page.extract_text() or ""
+                if len(extracted_text.strip()) < min_chars_per_page:
+                    print(f"[INFO] Page {page_number}/{total_pages} has insufficient text, running OCR...")
+                    images = convert_from_path(pdf_path, first_page=page_number, last_page=page_number, dpi=dpi)
+                    if images:
+                        ocr_text = pytesseract.image_to_string(images[0])
+                        combined_text = extracted_text.strip() + "\n" + ocr_text.strip()
+                        extracted_text = combined_text.strip()
+                else:
+                    print(f"[INFO] Page {page_number}/{total_pages} extracted via pdfplumber.")
+                full_text += extracted_text + "\n"
     except Exception as e:
-        print(f"[WARN] Could not open {pdf_path} with pdfplumber: {e}")
-
-    # If no text found, assume scanned => do OCR
-    if not text_content.strip():
-        print(f"[INFO] No text found in {pdf_path}, running OCR...")
-        text_content = ocr_pdf_to_text(pdf_path)
-
-    return text_content
+        print(f"[ERROR] Failed to process PDF: {e}")
+    return full_text
 
 # ---------------------------------------------------------------------------
 # 3. Parsing logic
 # ---------------------------------------------------------------------------
 
-# def parse_well_info(text):
-#     """
-#     Parse the well info fields from the text by first isolating the section
-#     after "Well Information" or "WELL DATA SUMMARY", then using regex to extract:
-#     - operator
-#     - api_number
-#     - well_name
-#     - enseco_job_number
-#     - job_type
-#     - county_state
-#     - well_shl (Well Surface Hole Location)
-#     - latitude
-#     - longitude
-#     - datum
-
-#     Returns a dictionary with these fields.
-#     """
-#     # Isolate the section after "Well Information" or "WELL DATA SUMMARY"
-#     section_match = re.search(r"(?:Well Information|WELL DATA SUMMARY)(.*)", text, re.DOTALL | re.IGNORECASE)
-#     if section_match:
-#         section_text = section_match.group(1)
-#     else:
-#         section_text = text
-
-#     # Define regex patterns for each field.
-#     # operator_pattern       = r"Operator:\s*(.+?)\s+API"
-#     operator_pattern = r"Operator:\s*(.+)"
-#     api_pattern            = r"API\s*#:\s*([0-9\-]+)"
-#     well_name_pattern      = r"Well Name:\s*([^\n]+)"
-#     enseco_job_pattern     = r"Enseco\s*Job\s*#:\s*([^\n]+)"
-#     job_type_pattern       = r"Well\s*Type:\s*([^\n]+)"
-#     # county_state_pattern   = r"County,\s*State:\s*([^\n]+)"
-#     county_state_pattern = r"County,\s*State\s*([^\n]+)"
-
-#     shl_pattern            = r"Surface Location:\s*([^\n]+)"
-#     latitude_pattern       = r"Latitude:\s*([^\n]+)"
-#     longitude_pattern      = r"Longitude:\s*([^\n]+)"
-#     datum_pattern          = r"Datum:\s*([^\n]+)"
-
-#     # Initialize the dictionary with all fields set to None.
-#     well_data = {
-#         "operator": None,
-#         "api_number": None,
-#         "well_name": None,
-#         "enseco_job_number": None,
-#         "job_type": None,
-#         "county_state": None,
-#         "well_shl": None,
-#         "latitude": None,
-#         "longitude": None,
-#         "datum": None
-#     }
-
-#     # Helper function to search the section_text with a given pattern and set the value.
-#     def match_and_set(pattern, key):
-#         m = re.search(pattern, section_text, re.IGNORECASE)
-#         if m:
-#             well_data[key] = m.group(1).strip()
-
-#     match_and_set(operator_pattern, "operator")
-#     match_and_set(api_pattern, "api_number")
-#     match_and_set(well_name_pattern, "well_name")
-#     match_and_set(enseco_job_pattern, "enseco_job_number")
-#     match_and_set(job_type_pattern, "job_type")
-#     match_and_set(county_state_pattern, "county_state")
-#     match_and_set(shl_pattern, "well_shl")
-#     match_and_set(latitude_pattern, "latitude")
-#     match_and_set(longitude_pattern, "longitude")
-#     match_and_set(datum_pattern, "datum")
-
-#     return well_data
-
 def parse_well_info(text):
     """
-    Parse the well info fields from the text by first isolating the section
-    after "Well Information" or "WELL DATA SUMMARY", then using regex to extract:
-    - operator
-    - api_number
-    - well_name
-    - enseco_job_number
-    - job_type
-    - county_state
-    - well_shl (Well Surface Hole Location)
-    - latitude
-    - longitude
-    - datum
-
-    Returns a dictionary with these fields.
+    Parse the well info fields from the text.
+    Returns a dictionary with the well info.
     """
-    # Isolate the section after "Well Information" or "WELL DATA SUMMARY"
     section_match = re.search(r"(?:Well Information|WELL DATA SUMMARY|SYNOPSIS)(.*)", text, re.DOTALL | re.IGNORECASE)
     section_text = section_match.group(1) if section_match else text
 
-    # Updated regex patterns
     operator_pattern       = r"Operator\s*(.+)"
-    api_pattern = r"API\s*(?:#|#:|NUMBER)\s*[:\-]?\s*([0-9\-]+)"
+    api_pattern            = r"API\s*(?:#|#:|NUMBER)\s*[:\-]?\s*([0-9\-]+)"
     well_name_pattern      = r"Well Name:\s*([^\n]+)"
     enseco_job_pattern     = r"Enseco\s*Job\s*#:\s*([^\n]+)"
     job_type_pattern       = r"Well\s*Type:\s*([^\n]+)"
@@ -249,7 +160,6 @@ def parse_well_info(text):
     longitude_pattern      = r"Longitude:\s*([^\n]+)"
     datum_pattern          = r"Datum:\s*([^\n]+)"
 
-    # Initialize the dictionary with all fields set to None.
     well_data = {
         "operator": None,
         "api_number": None,
@@ -263,13 +173,11 @@ def parse_well_info(text):
         "datum": None
     }
 
-    # Helper function to search the section_text with a given pattern and set the value.
     def match_and_set(pattern, key):
         m = re.search(pattern, section_text, re.IGNORECASE)
         if m:
             well_data[key] = m.group(1).strip()
 
-    # Extract each field
     match_and_set(operator_pattern, "operator")
     match_and_set(api_pattern, "api_number")
     match_and_set(well_name_pattern, "well_name")
@@ -283,15 +191,12 @@ def parse_well_info(text):
 
     return well_data
 
+# --- Stimulation Parsing Functions ---
 
-
-
-def parse_stimulation_data(text):
-    """
-    Parse stimulation data from W28654.pdf using a line-by-line approach.
-    It captures the first block of stimulation data and the subsequent "Details" block.
-    Returns a dictionary of stimulation data fields.
-    """
+# Function tuned for Document 1 (e.g. with longer formation names)
+def parse_stimulation_data_doc1(text):
+    import re
+    from datetime import datetime
     lines = text.splitlines()
     data = {
         "date_stimulated": None,
@@ -308,16 +213,14 @@ def parse_stimulation_data(text):
         "max_treatment_rate": None,
         "proppant_details": None,
     }
-
     for i, line in enumerate(lines):
         line_stripped = line.strip()
-        # Capture the block with Date Stimulated, Formation, depths, stages, volume
         if "Date Stimulated" in line_stripped:
             if i+1 < len(lines):
                 next_line = lines[i+1].strip()
-                # Expected format: "06/09/2015 Three Forks Second Bench 11185 20754 50 I 126978 Barrels"
+                # Use positive lookahead to capture full formation names (doc1)
                 m = re.match(
-                    r"(\d{2}/\d{2}/\d{4})\s+(.*?)\s+(\d+)\s+(\d+)\s+(\d+)\s+I\s+(\d+)\s+(\w+)",
+                    r"(\d{2}/\d{2}/\d{4})\s+(.+?)(?=\s+\d{4,})\s+(\d+)\s+(\d+)\s+(\d+)\s*[|I]\s+(\d+)\s+(\w+)",
                     next_line
                 )
                 if m:
@@ -325,7 +228,7 @@ def parse_stimulation_data(text):
                         raw_date = m.group(1).strip()
                         date_obj = datetime.strptime(raw_date, "%m/%d/%Y")
                         data["date_stimulated"] = date_obj.strftime("%Y-%m-%d")
-                    except Exception as e:
+                    except Exception:
                         data["date_stimulated"] = None
                     data["stimulated_formation"] = m.group(2).strip()
                     data["top_depth"] = m.group(3).strip()
@@ -333,44 +236,108 @@ def parse_stimulation_data(text):
                     data["stimulation_stages"] = m.group(5).strip()
                     data["volume"] = m.group(6).strip()
                     data["volume_units"] = m.group(7).strip()
-        # Capture Type Treatment block
         if "Type Treatment" in line_stripped:
             if i+1 < len(lines):
                 next_line = lines[i+1].strip()
-                # Expected format: "Sand Frac 4230380 9122 39.0"
                 m = re.match(r"(.+?)\s+(\d+)\s+(\d+)\s+([\d.]+)", next_line)
                 if m:
                     data["type_treatment"] = m.group(1).strip()
                     data["lbs_proppant"] = m.group(2).strip()
                     data["max_treatment_pressure"] = m.group(3).strip()
                     data["max_treatment_rate"] = m.group(4).strip()
-        # Capture the Details block
         if "Details" in line_stripped:
             details_lines = []
             for j in range(i+1, len(lines)):
                 l = lines[j].strip()
-                # Stop capturing if we hit an empty line or a new header
                 if l == "" or l.startswith("Date Stimulated") or l.startswith("Type Treatment"):
                     break
                 details_lines.append(l)
             if details_lines:
                 data["proppant_details"] = "\n".join(details_lines)
-            # We capture only the first details block
             break
-
     return data
 
+# Function tuned for Document 2 (more tolerant separator)
+def parse_stimulation_data_doc2(text):
+    import re
+    from datetime import datetime
+    lines = text.splitlines()
+    data = {
+        "date_stimulated": None,
+        "stimulated_formation": None,
+        "type_treatment": None,
+        "top_depth": None,
+        "bottom_depth": None,
+        "stimulation_stages": None,
+        "volume": None,
+        "volume_units": None,
+        "acid_percent": None,
+        "lbs_proppant": None,
+        "max_treatment_pressure": None,
+        "max_treatment_rate": None,
+        "proppant_details": None,
+    }
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
+        if "Date Stimulated" in line_stripped:
+            if i+1 < len(lines):
+                next_line = lines[i+1].strip()
+                # This regex accepts either an explicit separator or extra spaces (doc2)
+                m = re.match(
+                    r"(\d{2}/\d{2}/\d{4})\s+(.+?)\s+(\d+)\s+(\d+)(?:\s*[|I]\s*|\s+)(\d+)\s+(\d+)\s+(\w+)",
+                    next_line
+                )
+                if m:
+                    try:
+                        raw_date = m.group(1).strip()
+                        date_obj = datetime.strptime(raw_date, "%m/%d/%Y")
+                        data["date_stimulated"] = date_obj.strftime("%Y-%m-%d")
+                    except Exception:
+                        data["date_stimulated"] = None
+                    data["stimulated_formation"] = m.group(2).strip()
+                    data["top_depth"] = m.group(3).strip()
+                    data["bottom_depth"] = m.group(4).strip()
+                    data["stimulation_stages"] = m.group(5).strip()
+                    data["volume"] = m.group(6).strip()
+                    data["volume_units"] = m.group(7).strip()
+        if "Type Treatment" in line_stripped:
+            if i+1 < len(lines):
+                next_line = lines[i+1].strip()
+                m = re.match(r"(.+?)\s+(\d+)\s+(\d+)\s+([\d.]+)", next_line)
+                if m:
+                    data["type_treatment"] = m.group(1).strip()
+                    data["lbs_proppant"] = m.group(2).strip()
+                    data["max_treatment_pressure"] = m.group(3).strip()
+                    data["max_treatment_rate"] = m.group(4).strip()
+        if "Details" in line_stripped:
+            details_lines = []
+            for j in range(i+1, len(lines)):
+                l = lines[j].strip()
+                if l == "" or l.startswith("Date Stimulated") or l.startswith("Type Treatment"):
+                    break
+                details_lines.append(l)
+            if details_lines:
+                data["proppant_details"] = "\n".join(details_lines)
+            break
+    return data
 
+def merge_stimulation_data(data1, data2):
+    """
+    For each key in the set of required stimulation fields, if data1 is None
+    and data2 has a non-null value, update data1.
+    """
+    keys = ["date_stimulated", "stimulated_formation", "top_depth", "bottom_depth",
+            "stimulation_stages", "volume", "volume_units"]
+    for key in keys:
+        if data1.get(key) is None and data2.get(key) is not None:
+            data1[key] = data2[key]
+    return data1
 
 # ---------------------------------------------------------------------------
 # 4. Insert data into the database
 # ---------------------------------------------------------------------------
 
 def insert_well_info(well_data, host="localhost", user="root", password="root", database="oil_well_data"):
-    """
-    Insert well info data into the well_info table.
-    Return the inserted row's ID (well_info_id).
-    """
     conn = mysql.connector.connect(
         host=host,
         user=user,
@@ -378,7 +345,6 @@ def insert_well_info(well_data, host="localhost", user="root", password="root", 
         database=database
     )
     cursor = conn.cursor()
-
     insert_sql = """
     INSERT INTO well_info (
         operator,
@@ -406,14 +372,11 @@ def insert_well_info(well_data, host="localhost", user="root", password="root", 
         well_data["longitude"],
         well_data["datum"]
     )
-
     cursor.execute(insert_sql, values)
     conn.commit()
     well_info_id = cursor.lastrowid
-
     cursor.close()
     conn.close()
-
     return well_info_id
 
 def insert_stimulation_data(stim_data, well_info_id, host="localhost", user="root", password="root", database="oil_well_data"):
@@ -462,66 +425,49 @@ def insert_stimulation_data(stim_data, well_info_id, host="localhost", user="roo
     cursor.close()
     conn.close()
 
-
 # ---------------------------------------------------------------------------
 # 5. Main script
 # ---------------------------------------------------------------------------
 
 def main():
-    # 1) Create DB and tables if needed
     create_db_and_tables()
-
-    # 2) Path to folder containing the PDFs
     pdf_folder = "pdf_folder"
 
-    # 3) Iterate over PDFs in the folder
     for filename in os.listdir(pdf_folder):
         if filename.lower().endswith(".pdf"):
             pdf_path = os.path.join(pdf_folder, filename)
             print(f"Processing PDF: {pdf_path}")
 
-            # Extract text (OCR if needed)
+            # Extract text (using OCR if needed)
             text_content = extract_text_from_pdf(pdf_path)
 
-
-            # Save to a text file
+            # Save extracted text to a file
             output_filename = os.path.basename(pdf_path).replace(".pdf", "_extracted.txt")
             output_path = os.path.join("extracted_texts", output_filename)
-
-            # Create folder if it doesn't exist
             os.makedirs("extracted_texts", exist_ok=True)
-
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(text_content)
-
             print(f"Extracted text saved to: {output_path}")
 
-
-            # 4) Parse the well info
+            # Parse well info
             well_info = parse_well_info(text_content)
-            # print(well_info)
-
-
-
-            # (Optional) If you can confirm there's always a well_number in the PDF name,
-            # you could parse it from `filename` or do more logic here.
-
-            # 5) Insert well info into DB
             well_info_id = insert_well_info(well_info, host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME)
             print(f"Inserted well info with ID: {well_info_id}")
 
-            # 6) Parse stimulation data
-            stim_data = parse_stimulation_data(text_content)
+            # First, try the doc1 version of stimulation parsing
+            stim_data = parse_stimulation_data_doc1(text_content)
+            # If any required field is missing, run the doc2 version and merge
+            required_keys = ["date_stimulated", "stimulated_formation", "top_depth", "bottom_depth", "stimulation_stages", "volume", "volume_units"]
+            if any(stim_data.get(key) is None for key in required_keys):
+                stim_data_doc2 = parse_stimulation_data_doc2(text_content)
+                stim_data = merge_stimulation_data(stim_data, stim_data_doc2)
             print(stim_data)
 
-            # 7) Insert stimulation data
             if stim_data["date_stimulated"] or stim_data["stimulated_formation"]:
-                # We only insert if we actually found some real data
                 insert_stimulation_data(stim_data, well_info_id, host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME)
                 print("Inserted stimulation data.")
 
     print("Done processing all PDFs.")
 
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     main()
