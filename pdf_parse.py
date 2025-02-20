@@ -144,6 +144,78 @@ def extract_text_from_pdf(pdf_path):
 # 3. Parsing logic
 # ---------------------------------------------------------------------------
 
+# def parse_well_info(text):
+#     """
+#     Parse the well info fields from the text by first isolating the section
+#     after "Well Information" or "WELL DATA SUMMARY", then using regex to extract:
+#     - operator
+#     - api_number
+#     - well_name
+#     - enseco_job_number
+#     - job_type
+#     - county_state
+#     - well_shl (Well Surface Hole Location)
+#     - latitude
+#     - longitude
+#     - datum
+
+#     Returns a dictionary with these fields.
+#     """
+#     # Isolate the section after "Well Information" or "WELL DATA SUMMARY"
+#     section_match = re.search(r"(?:Well Information|WELL DATA SUMMARY)(.*)", text, re.DOTALL | re.IGNORECASE)
+#     if section_match:
+#         section_text = section_match.group(1)
+#     else:
+#         section_text = text
+
+#     # Define regex patterns for each field.
+#     # operator_pattern       = r"Operator:\s*(.+?)\s+API"
+#     operator_pattern = r"Operator:\s*(.+)"
+#     api_pattern            = r"API\s*#:\s*([0-9\-]+)"
+#     well_name_pattern      = r"Well Name:\s*([^\n]+)"
+#     enseco_job_pattern     = r"Enseco\s*Job\s*#:\s*([^\n]+)"
+#     job_type_pattern       = r"Well\s*Type:\s*([^\n]+)"
+#     # county_state_pattern   = r"County,\s*State:\s*([^\n]+)"
+#     county_state_pattern = r"County,\s*State\s*([^\n]+)"
+
+#     shl_pattern            = r"Surface Location:\s*([^\n]+)"
+#     latitude_pattern       = r"Latitude:\s*([^\n]+)"
+#     longitude_pattern      = r"Longitude:\s*([^\n]+)"
+#     datum_pattern          = r"Datum:\s*([^\n]+)"
+
+#     # Initialize the dictionary with all fields set to None.
+#     well_data = {
+#         "operator": None,
+#         "api_number": None,
+#         "well_name": None,
+#         "enseco_job_number": None,
+#         "job_type": None,
+#         "county_state": None,
+#         "well_shl": None,
+#         "latitude": None,
+#         "longitude": None,
+#         "datum": None
+#     }
+
+#     # Helper function to search the section_text with a given pattern and set the value.
+#     def match_and_set(pattern, key):
+#         m = re.search(pattern, section_text, re.IGNORECASE)
+#         if m:
+#             well_data[key] = m.group(1).strip()
+
+#     match_and_set(operator_pattern, "operator")
+#     match_and_set(api_pattern, "api_number")
+#     match_and_set(well_name_pattern, "well_name")
+#     match_and_set(enseco_job_pattern, "enseco_job_number")
+#     match_and_set(job_type_pattern, "job_type")
+#     match_and_set(county_state_pattern, "county_state")
+#     match_and_set(shl_pattern, "well_shl")
+#     match_and_set(latitude_pattern, "latitude")
+#     match_and_set(longitude_pattern, "longitude")
+#     match_and_set(datum_pattern, "datum")
+
+#     return well_data
+
 def parse_well_info(text):
     """
     Parse the well info fields from the text by first isolating the section
@@ -162,21 +234,17 @@ def parse_well_info(text):
     Returns a dictionary with these fields.
     """
     # Isolate the section after "Well Information" or "WELL DATA SUMMARY"
-    section_match = re.search(r"(?:Well Information|WELL DATA SUMMARY)(.*)", text, re.DOTALL | re.IGNORECASE)
-    if section_match:
-        section_text = section_match.group(1)
-    else:
-        section_text = text
+    section_match = re.search(r"(?:Well Information|WELL DATA SUMMARY|SYNOPSIS)(.*)", text, re.DOTALL | re.IGNORECASE)
+    section_text = section_match.group(1) if section_match else text
 
-    # Define regex patterns for each field.
-    # operator_pattern       = r"Operator:\s*([^\n]+)"
-    operator_pattern       = r"Operator:\s*(.+?)\s+API"
-    api_pattern            = r"API\s*#:\s*([0-9\-]+)"
+    # Updated regex patterns
+    operator_pattern       = r"Operator\s*(.+)"
+    api_pattern = r"API\s*(?:#|#:|NUMBER)\s*[:\-]?\s*([0-9\-]+)"
     well_name_pattern      = r"Well Name:\s*([^\n]+)"
     enseco_job_pattern     = r"Enseco\s*Job\s*#:\s*([^\n]+)"
     job_type_pattern       = r"Well\s*Type:\s*([^\n]+)"
-    county_state_pattern   = r"County,\s*State:\s*([^\n]+)"
-    shl_pattern            = r"Surface Location:\s*([^\n]+)"
+    county_state_pattern   = r"County[/,]\s*State\s*(.+)"
+    shl_pattern            = r"Surface Location\s*(.+)"
     latitude_pattern       = r"Latitude:\s*([^\n]+)"
     longitude_pattern      = r"Longitude:\s*([^\n]+)"
     datum_pattern          = r"Datum:\s*([^\n]+)"
@@ -201,6 +269,7 @@ def parse_well_info(text):
         if m:
             well_data[key] = m.group(1).strip()
 
+    # Extract each field
     match_and_set(operator_pattern, "operator")
     match_and_set(api_pattern, "api_number")
     match_and_set(well_name_pattern, "well_name")
@@ -213,6 +282,9 @@ def parse_well_info(text):
     match_and_set(datum_pattern, "datum")
 
     return well_data
+
+
+
 
 def parse_stimulation_data(text):
     """
@@ -412,21 +484,22 @@ def main():
             text_content = extract_text_from_pdf(pdf_path)
 
 
-            # # Save to a text file
-            # output_filename = os.path.basename(pdf_path).replace(".pdf", "_extracted.txt")
-            # output_path = os.path.join("extracted_texts", output_filename)
+            # Save to a text file
+            output_filename = os.path.basename(pdf_path).replace(".pdf", "_extracted.txt")
+            output_path = os.path.join("extracted_texts", output_filename)
 
-            # # Create folder if it doesn't exist
-            # os.makedirs("extracted_texts", exist_ok=True)
+            # Create folder if it doesn't exist
+            os.makedirs("extracted_texts", exist_ok=True)
 
-            # with open(output_path, "w", encoding="utf-8") as f:
-            #     f.write(text_content)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(text_content)
 
-            # print(f"Extracted text saved to: {output_path}")
+            print(f"Extracted text saved to: {output_path}")
 
 
             # 4) Parse the well info
             well_info = parse_well_info(text_content)
+            # print(well_info)
 
 
 
