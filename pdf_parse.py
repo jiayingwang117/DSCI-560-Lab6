@@ -156,8 +156,9 @@ def parse_well_info(text):
     job_type_pattern       = r"Well\s*Type:\s*([^\n]+)"
     county_state_pattern   = r"County[/,]\s*State\s*(.+)"
     shl_pattern            = r"Surface Location\s*(.+)"
-    latitude_pattern       = r"Latitude:\s*([^\n]+)"
-    longitude_pattern      = r"Longitude:\s*([^\n]+)"
+    # Updated patterns: capture only the numeric part for latitude and longitude.
+    latitude_pattern       = r"(?:Survey\s+)?Latitude:\s*([-+]?[0-9]*\.?[0-9]+)"
+    longitude_pattern      = r"(?:Survey\s+)?Longitude:\s*([-+]?[0-9]*\.?[0-9]+)"
     datum_pattern          = r"Datum:\s*([^\n]+)"
 
     well_data = {
@@ -188,8 +189,13 @@ def parse_well_info(text):
     match_and_set(latitude_pattern, "latitude")
     match_and_set(longitude_pattern, "longitude")
     match_and_set(datum_pattern, "datum")
-
+    
+    print(well_data["latitude"])
     return well_data
+
+
+
+
 
 # --- Stimulation Parsing Functions ---
 
@@ -461,7 +467,7 @@ def main():
             if any(stim_data.get(key) is None for key in required_keys):
                 stim_data_doc2 = parse_stimulation_data_doc2(text_content)
                 stim_data = merge_stimulation_data(stim_data, stim_data_doc2)
-            print(stim_data)
+            # print(stim_data)
 
             if stim_data["date_stimulated"] or stim_data["stimulated_formation"]:
                 insert_stimulation_data(stim_data, well_info_id, host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME)
