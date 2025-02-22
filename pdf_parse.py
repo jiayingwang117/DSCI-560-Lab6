@@ -152,7 +152,8 @@ def parse_well_info(text):
     operator_pattern       = r"Operator\s*(.+)"
     api_pattern            = r"API\s*(?:#|#:|NUMBER)\s*[:\-]?\s*([0-9\-]+)"
     well_name_pattern      = r"Well Name:\s*([^\n]+)"
-    enseco_job_pattern     = r"Enseco\s*Job\s*#:\s*([^\n]+)"
+    # Updated pattern: capture only non-whitespace characters for the Enseco job number.
+    enseco_job_pattern     = r"Enseco\s*Job\s*#:\s*([^\s]+)"
     job_type_pattern       = r"Well\s*Type:\s*([^\n]+)"
     county_state_pattern   = r"County[/,]\s*State\s*(.+)"
     shl_pattern            = r"Surface Location\s*(.+)"
@@ -190,10 +191,8 @@ def parse_well_info(text):
     match_and_set(longitude_pattern, "longitude")
     match_and_set(datum_pattern, "datum")
     
-    print(well_data["latitude"])
+    print(well_data["enseco_job_number"])
     return well_data
-
-
 
 
 
