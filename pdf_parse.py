@@ -342,7 +342,8 @@ def merge_stimulation_data(data1, data2):
 # 4. Insert data into the database
 # ---------------------------------------------------------------------------
 
-def insert_well_info(well_data, host="localhost", user="root", password="root", database="oil_well_data"):
+def insert_well_info(well_data, host=DB_HOST, user=DB_USER, password=DB_PASS,
+                    database=DB_NAME):
     conn = mysql.connector.connect(
         host=host,
         user=user,
@@ -384,7 +385,8 @@ def insert_well_info(well_data, host="localhost", user="root", password="root", 
     conn.close()
     return well_info_id
 
-def insert_stimulation_data(stim_data, well_info_id, host="localhost", user="root", password="root", database="oil_well_data"):
+def insert_stimulation_data(stim_data, well_info_id, host=DB_HOST, user=DB_USER,
+                            password=DB_PASS, database=DB_NAME):
     conn = mysql.connector.connect(
         host=host,
         user=user,
