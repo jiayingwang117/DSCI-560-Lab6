@@ -54,9 +54,11 @@ After the script runs successfully, check the database tables to ensure the data
 ```sql
 USE lab6;
 SHOW TABLES;
-SELECT * FROM well_info LIMIT 10;
-SELECT * FROM stimulation_data LIMIT 10;
-SELECT * FROM well_scraped_data LIMIT 10;
+SELECT * FROM well_info_cleaned LIMIT 10;
+SELECT * FROM stimulation_data_cleaned LIMIT 10;
+SELECT * FROM well_scraped_data_cleaned LIMIT 10;
+SELECT * FROM block_stats_data LIMIT 10;
+SELECT * FROM proppant_details_data LIMIT 10
 ```
 
 ---
