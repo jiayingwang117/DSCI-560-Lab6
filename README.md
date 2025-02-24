@@ -38,7 +38,7 @@ SELECT * FROM well_info / stimulation_data LIMIT 10;
 ---
 
 
-# 📝 **Data Preprocessing Script (data_preprocessing.py)**
+# 📝 **Data Preprocessing Script (data.preprocessing.py)**
 The **data_preprocessing.py** script clean and format the data we get from **pdf.parse.py** and **web_scraper.py** with **BeautifulSoup** and **re**.
 
 ---
@@ -46,7 +46,7 @@ The **data_preprocessing.py** script clean and format the data we get from **pdf
 ## 🏃 **Running the Script**  
 Execute the Python script:
 ```bash
-python data_preprocess.py
+python data.preprocess.py
 ```
 
 ## 🔍 **Show Data in MySQL**  
